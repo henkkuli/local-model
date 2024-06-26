@@ -7,4 +7,5 @@ The definitions and theorems are based on the book of [Distributed Algorithms co
 - [x] Port-numbered network (`PNNetwork`)
 - [x] Covering maps (`CoveringMap`)
 - [x] PN algorithms (`PNAlgorithm`)
-- [ ] PN algorithms cannot distinguish covering maps (`PNAlgorithm.covering_map_indistinguishable`)
+- [x] PN algorithms cannot distinguish covering maps (`PNAlgorithm.covering_map_indistinguishable`)
+- [ ] Define LOCAL model

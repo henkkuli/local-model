@@ -37,10 +37,8 @@ structure CoveringMap (g : PNNetwork V) (f : PNNetwork U) where
     map v' = u' ∧ HEq p' q'
 
 def CoveringMap.mapPort (cm : CoveringMap g f) : g.Port → f.Port :=
-  fun vp =>
-    let up := g.port' vp
-    let u' := cm.map up.fst
-    ⟨u', cm.map_preserves_degree _ ▸ up.snd⟩
+  fun vp => ⟨cm.map vp.fst, cm.map_preserves_degree _ ▸ vp.snd⟩
+
 
 -- def CoveringMap.expandState {S : Type*} {g : PNNetwork V} {g' : PNNetwork V'} (cm : CoveringMap g g') : (V' → S) → (V → S) :=
 --   fun target => target ∘ cm.map
@@ -50,8 +48,31 @@ abbrev CoveringMap.expandState {S : ℕ → Type*} {g : PNNetwork V} {g' : PNNet
     fun v =>
       cm.map_preserves_degree _ ▸ target (cm.map v)
 
+
+-- abbrev CoveringMap.expandState' {S : ℕ → Type*} {g : PNNetwork V} {g' : PNNetwork V'} (cm : CoveringMap g g') : ((v : V') → S (g'.degree v)) → ((v : V) → S (g'.degree (cm.map v))) :=
+--   fun target =>
+--     fun v =>
+--       cm.map_preserves_degree _ ▸ target (cm.map v)
+
+-- theorem CoveringMap.expandState_eq_expandState' {S : ℕ → Type*} {g : PNNetwork V} {g' : PNNetwork V'} (cm : CoveringMap g g') (state : (v : V') → S (g'.degree v)): cm.expandState state = cast (cm.map_preserves_degree _) cm.expandState' state := sorry
+
 theorem CoveringMap.expandState.foo {S : ℕ → Type*} {g : PNNetwork V} {g' : PNNetwork V'} (cm : CoveringMap g g') (state : (v : V') → S (g'.degree v)) :
   ∀ (v : V), cm.expandState state v = cm.map_preserves_degree _ ▸ state (cm.map v) := by simp
+
+
+-- theorem CoveringMap.expandState.preserves_functions {S : ℕ → Type*} {g : PNNetwork V} {g' : PNNetwork V'} (cm : CoveringMap g g') (state : (v : V') → S (g'.degree v)) (f : {d : ℕ} → S d → U) :
+--   ∀ (v : V), f (state (cm.map v)) = f (cm.expandState state v) := by
+--   intro v
+--   congr
+--   exact (cm.map_preserves_degree v).symm
+--   simp
+
+-- theorem CoveringMap.expandState'.preserves_functions {S S' : ℕ → Type*} {g : PNNetwork V} {g' : PNNetwork V'} (cm : CoveringMap g g') (state : (v : V') → S (g'.degree v)) (f : {d : ℕ} → S d → S' d) :
+--   ∀ (v : V), f (state (cm.map v)) = f (cm.expandState' state v) := by
+--   intro v
+--   congr
+--   rw [expandState', eqRec_eq_cast, eqRec_eq_cast, cast_cast, cast_eq]
+
 
 theorem PNNetwork.doubleCover.is_cover (g : PNNetwork V) : CoveringMap g.doubleCover g where
   map := fun ⟨v, _⟩ => v
@@ -65,9 +86,9 @@ theorem PNNetwork.doubleCover.is_cover (g : PNNetwork V) : CoveringMap g.doubleC
 
 
 structure PNAlgorithm where
-  Input : ℕ → Type*
-  State : ℕ → Type*
-  Msg : Type*
+  Input : ℕ → Sort*
+  State : ℕ → Sort*
+  Msg : Sort*
   is_stopping_state : State d → Prop
   init : {d : ℕ} → Input d → State d
   send : {d : ℕ} → State d → Fin d → Msg
@@ -79,13 +100,16 @@ structure PNAlgorithm where
 def PNAlgorithm.initOn (a : PNAlgorithm) (g : PNNetwork V) (input : (v : V) → a.Input (g.degree v)) : (v : V) → a.State (g.degree v) :=
   fun v => a.init (input v)
 
+
+abbrev PNAlgorithm.stepOn.incoming (a : PNAlgorithm) (g : PNNetwork V) (state : (v : V) → a.State (g.degree v)) : (v : V) → Fin (g.degree v) → a.Msg :=
+  fun v p =>
+    -- Collect messages from neighbors
+    let ⟨u, q⟩ := g.port v p
+    a.send (state u) q
+
 def PNAlgorithm.stepOn (a : PNAlgorithm) (g : PNNetwork V) (state : (v : V) → a.State (g.degree v)) : (v : V) → a.State (g.degree v) :=
   fun v =>
-    -- Collect messages from neighbors
-    let incoming (p : Fin (g.degree v)) :=
-      let ⟨u, q⟩ := g.port v p
-      a.send (state u) q
-    a.recv (state v) incoming
+    a.recv (state v) (stepOn.incoming a g state v)
 
 def PNAlgorithm.stepOnFor (a : PNAlgorithm) (g : PNNetwork V) (state : (v : V) → a.State (g.degree v)) (steps : ℕ) : (v : V) → a.State (g.degree v) :=
   match steps with
@@ -98,62 +122,75 @@ def PNAlgorithm.HaltsOnWith (a : PNAlgorithm) (g : PNNetwork V) (input : (v : V)
 def PNAlgorithm.HaltsOn (a : PNAlgorithm) (g : PNNetwork V) : Prop :=
   ∀ input, a.HaltsOnWith g input
 
+theorem PNAlgorithm.covering_map_indistinguishable.step_on.incoming {g : PNNetwork V} {g' : PNNetwork V'} (a : PNAlgorithm) (cm : CoveringMap g g')
+  (state : (v : V') → a.State (g'.degree v)) :
+  ∀ (v : V), stepOn.incoming a g' state (cm.map v) = cm.map_preserves_degree v ▸ stepOn.incoming a g (cm.expandState state) v := by
+  intro v
+  reduce
+  rw [eqRec_eq_cast, cast_eq_iff_heq.mpr]
+  apply Function.hfunext
+  · rw [cm.map_preserves_degree v]
+
+  · intro p q h_pq
+
+    have ⟨b, c⟩ := cm.map_preserves_connections v p
+    simp_all
+
+    congr
+    · rw [cm.map_preserves_degree, b]
+      congr
+      rw [eqRec_eq_cast, cast_eq_iff_heq]
+      assumption
+
+    · have := congr_arg_heq state b
+      rw [rec_heq_iff_heq]
+      apply HEq.trans this
+      congr
+      rw [eqRec_eq_cast, cast_eq_iff_heq]
+      assumption
+
+    · apply HEq.trans c
+      rw [eqRec_eq_cast]
+      congr
+      rw [cast_eq_iff_heq.mpr]
+      assumption
 
 theorem PNAlgorithm.covering_map_indistinguishable.step_on {g : PNNetwork V} {g' : PNNetwork V'} (a : PNAlgorithm) (cm : CoveringMap g g') (state : (v : V') → a.State (g'.degree v)) :
   cm.expandState (a.stepOn g' state) = a.stepOn g (cm.expandState state) := by
-  let estate := cm.expandState state
-
-  have send_same : ∀ (v : V), a.send (state (cm.map v)) = cm.map_preserves_degree _ ▸ a.send (cm.expandState state v) := by
-    intro v
-    funext p
-    -- have lemma1 (α : Sort*) (β : Sort*) (γ : Sort*) (f : {δ : Type} → δ → γ) : α = β → HEq (@f α) (@f β) := by sorry
-    let m₁ := a.send (state (cm.map v))
-    let m₂ := a.send (cm.expandState state v)
-    let m₃ := cm.map_preserves_degree _ ▸ m₂
-    have : HEq m₂ m₃ := by
-      aesop
-    have : m₁ = m₃ := by
-      funext p
-      let foo := m₃ p
-      reduce
-      -- have _ := lemma1 (Fin $ g.degree v) (Fin $ g'.degree (cm.map v))
-      -- aesop
-
-      sorry
-
-    -- let m₂ :=  ▸ m₂
-    rw [CoveringMap.expandState.foo]
-    -- rw [CoveringMap.expandState]
-
-    conv =>
-      rhs
-      simp
-
-    sorry
-
   funext v
-  -- let lhs := cm.expandState (a.stepOn g' state) v
-  -- reduce at lhs
-
-
-  -- repeat rw [CoveringMap.expandState, PNAlgorithm.stepOn]
-  conv =>
-    lhs
-    rw [CoveringMap.expandState]
-    rw [PNAlgorithm.stepOn]
-    -- reduce
-    lhs
-
-
-  conv =>
-    rhs
-    rw [PNAlgorithm.stepOn]
-    -- arg 3
-    -- rw [CoveringMap.expandState]
-    -- reduce
   reduce
+  repeat rw [eqRec_eq_cast]
+  rw [cast_eq_iff_heq]
+  congr
+  · exact (cm.map_preserves_degree v).symm
+  · symm
+    apply cast_heq
+  · have h := covering_map_indistinguishable.step_on.incoming a cm state v
+    reduce at h
+    simp_all only [eqRec_heq_iff_heq, heq_eq_eq]
 
-  sorry
+
+theorem PNAlgorithm.covering_map_indistinguishable.init_on {g : PNNetwork V} {g' : PNNetwork V'} (a : PNAlgorithm) (cm : CoveringMap g g') (input : (v : V') → a.Input (g'.degree v)) :
+  cm.expandState (a.initOn g' input) = a.initOn g (cm.expandState input) := by
+  funext v
+  reduce
+  repeat rw [eqRec_eq_cast]
+  rw [cast_eq_iff_heq]
+  congr
+  · exact (cm.map_preserves_degree v).symm
+  · symm
+    apply cast_heq
+
+def NodeLabeling {V : Type*} (S : Type*) := V → S
+
+-- structure ColoringOn (c : ℕ) (g : PNNetwork V) where
+--   labeling : NodeLabeling (Fin c)
+--   is_coloring := ∀ e ∈ g.edges, labeling e.1 ≠ labeling e.2
+
+-- def EdgeLabeling {V : Type*} (S : Type*) := V → S
+
+-- def PNAlgorithm.bipartiteMatching : PNAlgorithm where
+--   Input := ColoringOn
 
 -- partial def PNAlgorithm.evalOn.loop (a : PNAlgorithm) (g : PNNetwork V) (state : (v : V) → a.State (g.degree v)) : (v : V) → a.State (g.degree v) := by
 --   by_cases ∀ (v : V), a.is_stopping_state (state v)
